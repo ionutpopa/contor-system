@@ -17,7 +17,6 @@ Structura algoritmului:
 - Contorizează și înregistrează: pentru fiecare nod, salvează puterea activă, curentul și tensiunea.
 - Adaptează la schimbările de sarcină sau de configurație: actualizează rezultatele când intervine o schimbare în sistem.
 
-
 Sa presupunem ca avem un sistem in felul urmator:
 la intrate in sistem este sursa care debiteaza energie catre urmatoarele elemente:
 - deoarece sursa de energie este de 100MW se va debita la o tensiune de 20kV si va intra energia intr-un transformator de 20/110
