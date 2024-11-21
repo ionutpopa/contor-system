@@ -197,7 +197,7 @@ func transformerLossesBasedOnEfficency(powerInput float64, efficency float64) fl
 Functie ce imparte sistemul pe zone
 */
 func zones(system System) {
-
+	print(system)
 }
 
 // Funcția principală pentru calcul
@@ -262,5 +262,7 @@ func main() {
 	// linie de 10 km lungime, un conductor de aluminiu cu secțiunea de 𝐴=50𝑚𝑚^2 și un curent 𝐼=100
 
 	// Rulează calculul pe baza configurării încărcate
-	calculateSystem(system)
+	// calculateSystem(system)
+
+	zones(system)
 }
