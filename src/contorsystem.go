@@ -6,6 +6,10 @@ import (
 	"log"
 	"math"
 	"os"
+	"time"
+
+	"github.com/xitongsys/parquet-go/parquet"
+	"github.com/xitongsys/parquet-go/writer"
 )
 
 // Structuri si tipuri pentru reprezentarea sistemului
@@ -61,8 +65,14 @@ type System struct {
 	Transformers      []Transformer `json:"transformers"`
 	Lines             []Line        `json:"lines"`
 	Consumers         []Consumer    `json:"consumers"`
-	Separator         Separator     `json:"separator"`
+	Separators        []Separator   `json:"separator"`
 	AdditionalSources []Source      `json:"additionalSources"`
+}
+
+type LogEntry struct {
+	Timestamp   string `parquet:"name=timestamp, type=BYTE_ARRAY"`
+	ComponentID string `parquet:"name=component_id, type=BYTE_ARRAY, convertedtype=UTF8"`
+	Message     string `parquet:"name=message, type=BYTE_ARRAY, convertedtype=UTF8"`
 }
 
 // Funcția de conversie volți în kilovolți
@@ -197,21 +207,42 @@ func transformerLossesBasedOnEfficency(powerInput float64, efficency float64) fl
 Functie ce imparte sistemul pe zone
 */
 func zones(system System) {
-	print(system)
+	// print(system)
 }
 
 // Funcția principală pentru calcul
-func calculateSystem(system System) {
+func calculateSystem(system System) []LogEntry {
+	var logs []LogEntry
+
 	fmt.Println("Calculating power flow for the system...")
 
 	// Verifică sursa inițială
 	sourcePower := system.Source.Power
 	sourceVoltage := system.Source.Voltage
-	fmt.Printf("Source %s supplying %.2f MW at %.2f kV\n", system.Source.ID, sourcePower, sourceVoltage)
+	var sourceMessage = fmt.Sprintf("Source %s supplying %.2f MW at %.2f kV\n", system.Source.ID, sourcePower, sourceVoltage)
+
+	sourceLog := LogEntry{
+		Timestamp:   time.Now().String(),
+		ComponentID: system.Source.ID,
+		Message:     sourceMessage,
+	}
+
+	fmt.Println(sourceMessage)
+
+	logs = append(logs, sourceLog)
 
 	// Traversează transformatoarele și liniile
 	for _, transformer := range system.Transformers {
-		fmt.Printf("Transformer %s steps %.2f kV to %.2f kV\n", transformer.ID, transformer.InputVoltage, transformer.OutputVoltage)
+		var transformerMessage = fmt.Sprintf("Transformer %s steps %.2f kV to %.2f kV\n", transformer.ID, transformer.InputVoltage, transformer.OutputVoltage)
+		fmt.Println(transformerMessage)
+
+		transformerLog := LogEntry{
+			Timestamp:   time.Now().String(),
+			ComponentID: transformer.ID,
+			Message:     transformerMessage,
+		}
+
+		logs = append(logs, transformerLog)
 	}
 
 	for _, line := range system.Lines {
@@ -222,30 +253,87 @@ func calculateSystem(system System) {
 		var lineResistence = lineResistence(ro, l, A)
 		var powerLoseesPerLine = wattToMegawatt(powerLineLoss(current, lineResistence))
 
-		fmt.Printf("Line %s (%d km) has voltage %.2f kV\n", line.ID, line.Length, line.Voltage)
-		fmt.Printf("Line resisstance: %.3f, Power losses per line: %.3f \n", lineResistence, powerLoseesPerLine)
+		var lineInfoMessage = fmt.Sprintf("Line %s (%d km) has voltage %.2f kV\n", line.ID, line.Length, line.Voltage)
+		var linePowerLosses = fmt.Sprintf("Power losses per line: %.3f \n", powerLoseesPerLine)
+
+		fmt.Println(lineInfoMessage)
+		fmt.Println(linePowerLosses)
+
+		lineInfoLog := LogEntry{
+			Timestamp:   time.Now().String(),
+			ComponentID: line.ID,
+			Message:     lineInfoMessage,
+		}
+
+		lineLossesLog := LogEntry{
+			Timestamp:   time.Now().String(),
+			ComponentID: line.ID,
+			Message:     linePowerLosses,
+		}
+
+		logs = append(logs, lineInfoLog)
+		logs = append(logs, lineLossesLog)
 	}
 
 	// Calculează consumatorii
 	for _, consumer := range system.Consumers {
-		fmt.Printf("Consumer %s draws %.2f MW at %.2f kV\n", consumer.ID, consumer.Power, consumer.Voltage)
+		var consumerMessage = fmt.Sprintf("Consumer %s draws %.2f MW at %.2f kV\n", consumer.ID, consumer.Power, consumer.Voltage)
+		fmt.Println(consumerMessage)
+
+		consumerLog := LogEntry{
+			Timestamp:   time.Now().String(),
+			ComponentID: consumer.ID,
+			Message:     consumerMessage,
+		}
+
+		logs = append(logs, consumerLog)
 	}
 
 	// Verifică separatorul și sursa adițională
-	if system.Separator.State == StateClose {
-		for _, additionalSource := range system.AdditionalSources {
-			fmt.Printf("Additional source %s supplying %.2f MW at %.2f kV\n", additionalSource.ID, additionalSource.Power, additionalSource.Voltage)
+	for _, separator := range system.Separators {
+		var separatorMessage = fmt.Sprintf("Separator %s is in %s state", separator.ID, separator.State)
+
+		fmt.Println(separatorMessage)
+
+		separatorLog := LogEntry{
+			Timestamp:   time.Now().String(),
+			ComponentID: separator.ID,
+			Message:     separatorMessage,
+		}
+
+		logs = append(logs, separatorLog)
+
+		if separator.State == StateClose {
+			for _, additionalSource := range system.AdditionalSources {
+				var additionalSourceMessage = fmt.Sprintf("Additional source %s supplying %.2f MW at %.2f kV\n", additionalSource.ID, additionalSource.Power, additionalSource.Voltage)
+				fmt.Println(additionalSourceMessage)
+
+				additionalSourceLog := LogEntry{
+					Timestamp:   time.Now().String(),
+					ComponentID: additionalSource.ID,
+					Message:     additionalSourceMessage,
+				}
+
+				logs = append(logs, additionalSourceLog)
+			}
 		}
 	}
+
+	return logs
+}
+
+// ensureDirectory ensures the directory exists, creating it if necessary.
+func ensureDirectory(dir string) error {
+	return os.MkdirAll(dir, os.ModePerm)
 }
 
 // Funcția principală
 func main() {
 	// Deschide fișierul config.json
-	file, err := os.Open("../config.json")
+	file, configErr := os.Open("./config.json")
 
-	if err != nil {
-		log.Fatalf("Failed to open config.json: %v", err)
+	if configErr != nil {
+		log.Fatalf("Failed to open config.json: %v", configErr)
 	}
 
 	defer file.Close()
@@ -255,14 +343,65 @@ func main() {
 
 	decoder := json.NewDecoder(file)
 
-	if err := decoder.Decode(&system); err != nil {
-		log.Fatalf("Failed to decode JSON: %v", err)
+	if decodeError := decoder.Decode(&system); decodeError != nil {
+		log.Fatalf("Failed to decode JSON: %v", decodeError)
 	}
 
-	// linie de 10 km lungime, un conductor de aluminiu cu secțiunea de 𝐴=50𝑚𝑚^2 și un curent 𝐼=100
+	// Open a Parquet file named with the current date\
+	fileName := fmt.Sprintf("logs/%s", time.Now().Format("2006-01-02")+".parquet")
 
-	// Rulează calculul pe baza configurării încărcate
-	// calculateSystem(system)
+	fileNameError := ensureDirectory("logs")
 
-	zones(system)
+	if fileNameError != nil {
+		log.Fatalf("Failed to create logs directory: %v", fileNameError)
+	}
+
+	fw, parquetWritterError := NewLocalFileWriter(fileName)
+	if parquetWritterError != nil {
+		log.Println("Can't create local file", parquetWritterError)
+		return
+	}
+
+	pw, err := writer.NewParquetWriter(fw, new(LogEntry), 4)
+
+	// pw.RowGroupSize = 128 * 1024 * 1024 //128M
+	// pw.RowGroupSize = 1 * 1024 //1k
+	// pw.PageSize = 1 * 1024     //1K
+	pw.CompressionType = parquet.CompressionCodec_SNAPPY
+
+	if err != nil {
+		log.Println("Can't create parquet writer", err)
+		return
+	}
+
+	defer pw.WriteStop()
+	defer fw.Close()
+
+	// Create a ticker for logging every second
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	// Log system data every second
+	for range ticker.C {
+		// Collect logs from the system
+		// Rulează calculul pe baza configurării încărcate
+		logs := calculateSystem(system)
+
+		fmt.Println(logs)
+
+		// Write logs to the Parquet file
+		for _, logEntry := range logs {
+			if err := pw.Write(logEntry); err != nil {
+				log.Printf("Failed to write log entry: %v", err)
+			}
+			// Force flush to immediately write the log to disk
+			if err := pw.Flush(true); err != nil {
+				log.Printf("Failed to flush parquet writer: %v", err)
+			}
+		}
+
+		fmt.Println("Logged data to Parquet file")
+	}
+
+	// zones(system)
 }

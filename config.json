@@ -20,11 +20,9 @@
         {"id": "consumer2", "power": 30, "voltage": 20, "connectedTo": "transformer3"},
         {"id": "consumer3", "power": 50, "voltage": 20}
     ],
-    "separator": {
-        "id": "separator1",
-        "state": "closed",
-        "connectedTo": "source2"
-    },
+    "separators": [
+        {"id": "separator1", "state": "closed", "connectedTo": "source2"}
+    ],
     "additionalSources": [
         {"id": "source2", "power": 10, "voltage": 20}
     ]
