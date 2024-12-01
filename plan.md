@@ -3,6 +3,7 @@ Sistemul de contorizare are urmatoarele caracteristici:
 - Putem sa presupunem ca are punct de plecare energia: o sursa de energie de 100W
 - Are un sens energia
 - Separatorul cand e inchis se schimba sensul circulatiei de puteri
+- Liniile si transformatoarele vor avea un parametru special care sa indice puterea ce o transporta fiecare (powerTransfered)
 
 Parametrii de bază ai fiecărui element din rețea:
 - Transformatoare: rapoartele de transformare, pierderile și tipul (ridicător/coborâtor de tensiune).
