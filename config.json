@@ -1,30 +1,30 @@
 {
-    "frequency": 50,
     "source": {
         "id": "source1",
-        "power": 70,
+        "power": 100,
         "voltage": 20,
-        "connectedTo": "transformer1"
+        "connectedTo": "separator1"
     },
     "transformers": [
-        {"id": "transformer1", "type": "power", "inputVoltage": 20, "outputVoltage": 110, "connectedTo": "line1", "apparentPower": 120, "efficency": 0.95, "cooperLosses": 660, "steelLosses": 660},
-        {"id": "transformer2", "type": "power", "inputVoltage": 110, "outputVoltage": 20, "connectedTo": "consumer1", "apparentPower": 120, "efficency": 0.95, "cooperLosses": 660, "steelLosses": 660},
-        {"id": "transformer3", "type": "power", "inputVoltage": 20, "outputVoltage": 110, "connectedTo": "line2", "apparentPower": 120, "efficency": 0.95, "cooperLosses": 660, "steelLosses": 660},
-        {"id": "transformer4", "type": "power", "inputVoltage": 110, "outputVoltage": 20, "connectedTo": "consumer2", "apparentPower": 120, "efficency": 0.95, "cooperLosses": 660, "steelLosses": 660},
+        {"id": "transformer1", "type": "power", "inputVoltage": 20, "outputVoltage": 110, "connectedTo": "line1", "apparentPower": 120, "efficency": 0.95, "cooperLosses": 660, "steelLosses": 660, "powerTransfered": 0.0},
+        {"id": "transformer2", "type": "power", "inputVoltage": 110, "outputVoltage": 20, "connectedTo": "consumer1", "apparentPower": 120, "efficency": 0.95, "cooperLosses": 660, "steelLosses": 660, "powerTransfered": 0.0},
+        {"id": "transformer3", "type": "power", "inputVoltage": 20, "outputVoltage": 110, "connectedTo": "line2", "apparentPower": 120, "efficency": 0.95, "cooperLosses": 660, "steelLosses": 660, "powerTransfered": 0.0},
+        {"id": "transformer4", "type": "power", "inputVoltage": 110, "outputVoltage": 20, "connectedTo": "consumer2", "apparentPower": 120, "efficency": 0.95, "cooperLosses": 660, "steelLosses": 660, "powerTransfered": 0.0},
         {"id": "transformer5", "type": "measure", "inputVoltage": 20, "outputVoltage": 0.4, "connectedTo": "consumer2", "apparentPower": 20, "efficency": 0.95}
     ],
     "lines": [
-        {"id": "line1", "voltage": 110, "length": 10, "connectedTo": "transformer2", "area": 50, "current": 100, "ro": 2.82, "Drs": 4, "Dst": 4, "Drt": 4, "conductorDiameter": 2, "r": 0.01},
-        {"id": "line2", "voltage": 110, "length": 20, "connectedTo": "transformer4", "area": 50, "current": 100, "ro": 2.82, "Drs": 4, "Dst": 4, "Drt": 4, "conductorDiameter": 2, "r": 0.01}
+        {"id": "line1", "voltage": 110, "length": 10, "connectedTo": "transformer2", "area": 50, "current": 100, "ro": 2.82, "Drs": 4, "Dst": 4, "Drt": 4, "conductorDiameter": 2, "r": 0.01, "powerTransfered": 0.0},
+        {"id": "line2", "voltage": 110, "length": 20, "connectedTo": "transformer4", "area": 50, "current": 100, "ro": 2.82, "Drs": 4, "Dst": 4, "Drt": 4, "conductorDiameter": 2, "r": 0.01, "powerTransfered": 0.0}
     ],
     "consumers": [
-        {"id": "consumer1", "powerNeeded": 20, "voltage": 20, "connectedTo": "transformer3"},
-        {"id": "consumer2", "powerNeeded": 50, "voltage": 20, "connectedTo": "source2"}
+        {"id": "consumer1", "powerNeeded": 20, "voltage": 20, "connectedTo": "transformer3", "remainingPower": 0.0},
+        {"id": "consumer2", "powerNeeded": 50, "voltage": 20, "connectedTo": "separator2", "remainingPower": 0.0}
     ],
     "separators": [
-        {"id": "separator1", "state": "open", "connectedTo": "source2"}
+        {"connectsFrom": "_", "id": "separator1", "state": "close", "connectedTo": "transformer1"},
+        {"connectsFrom": "_", "id": "separator2", "state": "close", "connectedTo": "source2"}
     ],
     "additionalSources": [
-        {"id": "source2", "power": 10, "voltage": 20}
+        {"id": "source2", "power": 60, "voltage": 20, "connectedTo": "consumer2", "additionalPower": 0}
     ]
 }

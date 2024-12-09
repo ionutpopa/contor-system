@@ -1,10 +1,10 @@
 package computing
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"reflect"
-	"strconv"
 	"time"
 
 	"contor-system/src/utils"
@@ -231,25 +231,6 @@ func findConnectedTo(data utils.System, target string) []utils.ConnectedElement 
 	return results
 }
 
-func getPowerOfNode(connectedTo []utils.ConnectedElement, system utils.System) float64 {
-	for _, connection := range connectedTo {
-		var element = connection
-
-		if element.ID == "source1" {
-			// Suntem in primul element, deci o sursa, deci puterea va fi cea instalata
-			return element.Details.(utils.Source).Power
-		}
-
-		// Verificam daca tipul potrivit lui Details este transformer
-		if transformer, ok := connection.Details.(utils.Transformer); ok {
-			// Suntem in unul din transformatoare
-			fmt.Println(transformer)
-		}
-	}
-
-	return 0.0
-}
-
 // PowerMap creates a map where keys are the field names of the Data struct and values are maps with indices as keys and objects containing "power" = 0.
 func PowerMap(data utils.System) map[string]map[string]map[string]float64 {
 	result := make(map[string]map[string]map[string]float64)
@@ -282,7 +263,141 @@ func PowerMap(data utils.System) map[string]map[string]map[string]float64 {
 	return result
 }
 
-// Pierderile din trafo se monitorizeaza doar alea din amonte, (110), deci pierderile in fier influenteaza doar partea de 110kv, nu 20kv, 5A in secundar
+var systemAfterConfig utils.System
+
+func isActive(nID string, config *utils.System) bool {
+	var isActive = true
+	for _, separator := range config.Separators {
+		if separator.ConnectedTo == nID && separator.State == utils.StateOpen {
+			// Separatorul este deschis si este conectat in elementul 'n', calculul de puteri va fi oprit aici
+			isActive = false
+		}
+	}
+	return isActive
+}
+
+func calculatePowerFlow(id string, inputPower float64, config *utils.System, nodes map[string]interface{}, visited map[string]bool, consumersWithoutPower *[]string) {
+	const LowVoltage = 20
+
+	// Check if the node has already been visited
+	if visited[id] {
+		return
+	}
+	visited[id] = true
+
+	node, exists := nodes[id]
+	if !exists {
+		fmt.Printf("Node %s not found\n", id)
+		return
+	}
+
+	fmt.Printf("Traversing node: %s\n", id)
+
+	switch n := node.(type) {
+	case utils.Source:
+		fmt.Printf("Source %s receiving power: %.2f\n", n.ID, inputPower)
+		// Update the source's power in the config
+		if n.ID == config.Source.ID {
+			config.Source.Power = inputPower
+		} else {
+			for i, source := range config.AdditionalSources {
+				if source.ID == n.ID {
+					config.AdditionalSources[i].AdditionalPower = inputPower
+					break
+				}
+			}
+		}
+		calculatePowerFlow(n.ConnectedTo, inputPower, config, nodes, visited, consumersWithoutPower)
+
+	case utils.Transformer:
+		var isActive = isActive(n.ID, config)
+
+		if !isActive {
+			return
+		}
+
+		var totalCooperAndSteelLosses = (n.SteelLosses / 1000) + (n.CooperLosses / 1000)
+
+		var outputPower float64
+
+		// Print the losses and output power
+		fmt.Printf("Transformer %s transferring power: %.2f -> %.2f (losses: %.2f)\n", n.ID, inputPower, outputPower, totalCooperAndSteelLosses)
+
+		if n.InputVoltage == LowVoltage {
+			outputPower = inputPower - totalCooperAndSteelLosses
+		} else {
+			outputPower = inputPower
+		}
+
+		// fmt.Printf("Transformer %s transferring power: %.2f -> %.2f\n", n.ID, inputPower, outputPower)
+		// Update the transformer's power in the config
+		for i, transformer := range config.Transformers {
+			if transformer.ID == n.ID {
+				config.Transformers[i].PowerTransfered = inputPower
+				break
+			}
+		}
+		calculatePowerFlow(n.ConnectedTo, outputPower, config, nodes, visited, consumersWithoutPower)
+
+	case utils.Line:
+		var isActive = isActive(n.ID, config)
+
+		if !isActive {
+			return
+		}
+
+		// Print the power being transferred through the line
+		fmt.Printf("Line %s transferring power: %.2f\n", n.ID, inputPower)
+
+		// Update the line's power in the config
+		for i, line := range config.Lines {
+			if line.ID == n.ID {
+				config.Lines[i].PowerTransfered = inputPower
+				break
+			}
+		}
+		calculatePowerFlow(n.ConnectedTo, inputPower, config, nodes, visited, consumersWithoutPower)
+
+	case utils.Separator:
+		if n.State == utils.StateOpen {
+			fmt.Printf("Separator %s is open, stopping power flow.\n", n.ID)
+			return
+		}
+		for i, separator := range config.Separators {
+			if separator.ID == n.ID {
+				config.Separators[i].State = n.State
+				break
+			}
+		}
+		calculatePowerFlow(n.ConnectedTo, inputPower, config, nodes, visited, consumersWithoutPower)
+
+	case utils.Consumer:
+		var isActive = isActive(n.ID, config)
+
+		if !isActive {
+			return
+		}
+		remainingPower := inputPower - n.PowerNeeded
+
+		if inputPower >= n.PowerNeeded {
+		} else {
+			*consumersWithoutPower = append(*consumersWithoutPower, n.ID)
+			return
+		}
+		fmt.Printf("Consumer %s received power: %.2f, remaining: %.2f\n", n.ID, inputPower, remainingPower)
+		// Update the consumer's remaining power in the config
+		for i, consumer := range config.Consumers {
+			if consumer.ID == n.ID {
+				config.Consumers[i].RemainingPower = remainingPower
+				break
+			}
+		}
+		calculatePowerFlow(n.ConnectedTo, remainingPower, config, nodes, visited, consumersWithoutPower)
+
+	default:
+		fmt.Printf("Unhandled node type for ID: %s\n", id)
+	}
+}
 
 // Funcția principală pentru calcul
 func ComputeSystem(system utils.System) []LogEntry {
@@ -296,25 +411,15 @@ func ComputeSystem(system utils.System) []LogEntry {
 	// var totalActivePowerLosses400KV float64
 	// var totalReactivePowerLosses400KV float64
 
-	// Create the power map
-	powerMap := PowerMap(system)
-
 	fmt.Println("Calculating power flow for the system...")
 
 	// Verifică sursa inițială
 	sourcePower := system.Source.Power
 	sourceVoltage := system.Source.Voltage
 
-	// Modify the power value of the "Source" key
-	// Access the slice associated with "Source" and modify the power field
-	if sourceFromMap, ok := powerMap["Source"]; ok && len(sourceFromMap) > 0 {
-		// First position in Source map will always be the first source of the config file
-		sourceFromMap["0"]["power"] = sourcePower
-	}
-
 	var sourceMessage = fmt.Sprintf("Source %s supplying %.2f MW at %.2f kV\n", system.Source.ID, sourcePower, sourceVoltage)
 
-	fmt.Println(sourceMessage)
+	// fmt.Println(sourceMessage)
 
 	sourceLog := LogEntry{
 		Timestamp:   time.Now().String(),
@@ -324,64 +429,55 @@ func ComputeSystem(system utils.System) []LogEntry {
 
 	logs = append(logs, sourceLog)
 
-	// Pierderile in fier si cupru nu se aplica la tensiunea de 20kV
-	// Pierderile in fier si cupru se aplica in schimb la inalta tensiune, cum ar fi 110, 220, 400 kV
-	var transformerLosses float64
+	// Map nodes for quick lookup
+	nodes := map[string]interface{}{}
+	visited := map[string]bool{} // Track visited nodes
 
-	// Traversează transformatoarele și liniile
-	for transformerIndex, transformer := range system.Transformers {
-		var transformerMessage = fmt.Sprintf("Transformer %s steps %.2f kV to %.2f kV, type: %s \n", transformer.ID, transformer.InputVoltage, transformer.OutputVoltage, transformer.Type)
-		var totalCooperAndSteelLosses = (transformer.SteelLosses / 1000) + (transformer.CooperLosses / 1000)
-		fmt.Println(transformerMessage)
+	// Populate nodes
+	nodes[system.Source.ID] = system.Source
 
-		if transformerFromPowerMap, ok := powerMap["Transformers"]; ok && len(transformerFromPowerMap) > 0 {
-			var transformerIndexStr = strconv.Itoa(transformerIndex)
-			fmt.Println("power that gets thorugh value of "+transformerIndexStr+" transformer", transformerFromPowerMap[transformerIndexStr]["power"])
-			// If the tranformer index is 0 then the first power to substrant the transformer losses from is the Source power
-			if transformerIndex == 0 {
-				transformerFromPowerMap[transformerIndexStr]["power"] = powerMap["Source"]["0"]["power"] - totalCooperAndSteelLosses
-			} else {
-				var lastConnection = findConnectedTo(system, transformer.ID)
-				if len(lastConnection) > 0 {
-					var lastTransformerIndexStr = strconv.Itoa(transformerIndex - 1)
-					fmt.Println("Ultima conexiune a lui", transformer.ID, lastConnection[0].ID, lastConnection[0].Details)
-					transformerFromPowerMap[transformerIndexStr]["power"] = transformerFromPowerMap[lastTransformerIndexStr]["power"] - totalCooperAndSteelLosses
-				}
-			}
+	for _, as := range system.AdditionalSources {
+		nodes[as.ID] = as
+	}
+	for _, t := range system.Transformers {
+		nodes[t.ID] = t
+	}
+	for _, l := range system.Lines {
+		nodes[l.ID] = l
+	}
+	for _, s := range system.Separators {
+		nodes[s.ID] = s
+	}
+	for _, c := range system.Consumers {
+		nodes[c.ID] = c
+	}
+
+	consumersWithoutPower := []string{}
+
+	// Start traversal from the source
+	calculatePowerFlow(system.Source.ID, system.Source.Power, &system, nodes, visited, &consumersWithoutPower)
+
+	// Reverse calculation from additional sources
+	for _, source := range system.AdditionalSources {
+		calculatePowerFlow(source.ID, source.Power, &system, nodes, visited, &consumersWithoutPower)
+	}
+
+	// Output updated config
+	updatedConfig, err := json.MarshalIndent(system, "", "  ")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Updated Config:")
+	fmt.Println(string(updatedConfig))
+
+	if len(consumersWithoutPower) > 0 {
+		fmt.Println("Consumers without power:")
+		for _, consumerID := range consumersWithoutPower {
+			fmt.Printf("- Consumer ID: %s\n", consumerID)
 		}
-
-		// Pierderile in cupru si fier vor fi masurate in kW
-
-		transformerLog := LogEntry{
-			Timestamp:   time.Now().String(),
-			ComponentID: transformer.ID,
-			Message:     transformerMessage,
-		}
-
-		if transformer.Type == utils.TransformerTypeMeasure {
-			// measure
-		}
-
-		if transformer.Type == utils.TransformerTypePower {
-			// More then 20KV -> 110, 220, 400
-			if transformer.OutputVoltage == 110 {
-				var connectedTo = findConnectedTo(system, transformer.ID)
-
-				for _, connection := range connectedTo {
-					if connection.ID == "source1" {
-
-					}
-				}
-
-				fmt.Println(transformerLosses)
-				// // Aflam ce putere a mai ramas in nod si scadem pierderile din fier si cupru
-				// var powerInput float64 = getPowerOfNode(connectedTo, system) - totalCooperAndSteelLosses
-
-				// transformerLosses += transformerLossesBasedOnEfficency(powerInput, transformer.Efficency)
-			}
-		}
-
-		logs = append(logs, transformerLog)
+	} else {
+		fmt.Println("All consumers are powered.")
 	}
 
 	var activePowerLoseesPerLine float64
@@ -407,8 +503,8 @@ func ComputeSystem(system utils.System) []LogEntry {
 		var lineInfoMessage = fmt.Sprintf("Line %s (%d km) has voltage %.2f kV\n", line.ID, line.Length, line.Voltage)
 		var linePowerLosses = fmt.Sprintf("Active power losses per line: %.3f, Reactive power losses per line %.3f \n", activePowerLoseesPerLine, reactivePowerLoseesPerLine)
 
-		fmt.Println(lineInfoMessage)
-		fmt.Println(linePowerLosses)
+		// fmt.Println(lineInfoMessage)
+		// fmt.Println(linePowerLosses)
 
 		lineInfoLog := LogEntry{
 			Timestamp:   time.Now().String(),
@@ -429,7 +525,7 @@ func ComputeSystem(system utils.System) []LogEntry {
 	// Calculează consumatorii
 	for _, consumer := range system.Consumers {
 		var consumerMessage = fmt.Sprintf("Consumer %s draws %.2f MW at %.2f kV\n", consumer.ID, consumer.PowerNeeded, consumer.Voltage)
-		fmt.Println(consumerMessage)
+		// fmt.Println(consumerMessage)
 
 		consumerLog := LogEntry{
 			Timestamp:   time.Now().String(),
@@ -444,7 +540,7 @@ func ComputeSystem(system utils.System) []LogEntry {
 	for _, separator := range system.Separators {
 		var separatorMessage = fmt.Sprintf("Separator %s is in %s state", separator.ID, separator.State)
 
-		fmt.Println(separatorMessage)
+		// fmt.Println(separatorMessage)
 
 		separatorLog := LogEntry{
 			Timestamp:   time.Now().String(),
@@ -457,7 +553,7 @@ func ComputeSystem(system utils.System) []LogEntry {
 		if separator.State == utils.StateClose {
 			for _, additionalSource := range system.AdditionalSources {
 				var additionalSourceMessage = fmt.Sprintf("Additional source %s supplying %.2f MW at %.2f kV\n", additionalSource.ID, additionalSource.Power, additionalSource.Voltage)
-				fmt.Println(additionalSourceMessage)
+				// fmt.Println(additionalSourceMessage)
 
 				additionalSourceLog := LogEntry{
 					Timestamp:   time.Now().String(),
@@ -469,9 +565,6 @@ func ComputeSystem(system utils.System) []LogEntry {
 			}
 		}
 	}
-
-	fmt.Println(powerMap)
-	fmt.Println("---")
 
 	return logs
 }
