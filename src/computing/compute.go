@@ -337,7 +337,7 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 		var outputPower float64
 
 		// Print the losses and output power
-		var transformerMessage = fmt.Sprintf("Transformer %s transferring power: %.2f -> %.2f (losses: %.2f)\n", n.ID, inputPower, outputPower, totalCooperAndSteelLosses)
+		var transformerMessage = fmt.Sprintf("Transformer %s transferring power: %.2f -> %.2f (losses: %.2f)\n", n.ID, math.Abs(inputPower), math.Abs(outputPower), totalCooperAndSteelLosses)
 
 		transformerInfoLog := LogEntry{
 			Timestamp:   time.Now().Format("2006/01/02-15:04:05"),
@@ -544,7 +544,7 @@ func ComputeSystem(system utils.System) []LogEntry {
 	if len(consumersWithoutPower) > 0 {
 		fmt.Println("Consumers without power:")
 		for _, consumerID := range consumersWithoutPower {
-			var emptyConsumerMessage = fmt.Sprintf("Consumer %s needs more power: %.2f MW\n", consumerID.ID, consumerID.RemainingPowerNeeded)
+			var emptyConsumerMessage = fmt.Sprintf("Consumer %s needs more power: %.2f MW\n", consumerID.ID, math.Abs(consumerID.RemainingPowerNeeded))
 
 			emptyConsumerMessageLog := LogEntry{
 				Timestamp:   time.Now().Format("2006/01/02-15:04:05"),
