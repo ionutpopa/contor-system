@@ -12,8 +12,6 @@ import (
 
 	"contor-system/src/computing"
 	"contor-system/src/utils"
-
-	"github.com/xitongsys/parquet-go/writer"
 )
 
 // ensureDirectory ensures the directory exists, creating it if necessary.
@@ -21,107 +19,112 @@ func ensureDirectory(dir string) error {
 	return os.MkdirAll(dir, os.ModePerm)
 }
 
-// Funcția principală
-func main() {
-	// Deschide fișierul config.json
-	file, configErr := os.Open("./config.json")
-
-	if configErr != nil {
-		log.Fatalf("Failed to open config.json: %v", configErr)
+// Function to ensure we read config changes.
+func loadConfig(filePath string) (utils.System, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return utils.System{}, fmt.Errorf("failed to open config.json: %v", err)
 	}
-
 	defer file.Close()
 
-	// Decodează JSON-ul
 	var system utils.System
-
 	decoder := json.NewDecoder(file)
-
-	if decodeError := decoder.Decode(&system); decodeError != nil {
-		log.Fatalf("Failed to decode JSON: %v", decodeError)
+	if err := decoder.Decode(&system); err != nil {
+		return utils.System{}, fmt.Errorf("failed to decode config.json: %v", err)
 	}
 
-	// Open a Parquet file named with the current date\
-	fileName := fmt.Sprintf("logs/%s", time.Now().Format("2006-01-02")+".parquet")
+	return system, nil
+}
 
-	fileNameError := ensureDirectory("logs")
-
-	if fileNameError != nil {
-		log.Fatalf("Failed to create logs directory: %v", fileNameError)
+func writeToFile(logs []utils.LogEntry, filePath string) error {
+	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %v", err)
 	}
+	defer file.Close()
 
-	fw, localParquetError := utils.NewLocalFileWriter(fileName)
-	if localParquetError != nil {
-		log.Println("Can't create local file", localParquetError)
-		return
-	}
-
-	pw, parquetWritterError := writer.NewParquetWriter(fw, new(utils.LogEntry), 4)
-
-	if parquetWritterError != nil {
-		log.Println("Can't create parquet writer", parquetWritterError)
-		return
-	}
-
-	// pw.RowGroupSize = 128 * 1024 * 1024 //128M
-	// pw.RowGroupSize = 1 * 1024 //1k
-	// pw.PageSize = 1 * 1024     //1K
-	// pw.CompressionType = parquet.CompressionCodec_SNAPPY
-
-	// Ensure resources are closed properly
-	var cleanupOnce sync.Once
-	cleanup := func() {
-		fmt.Println("Cleaning up resources...")
-		if err := pw.WriteStop(); err != nil {
-			log.Printf("Error stopping Parquet writer: %v", err)
-		}
-		if err := fw.Close(); err != nil {
-			log.Printf("Error closing file writer: %v", err)
+	for _, logEntry := range logs {
+		line := fmt.Sprintf("%s | %s | %s\n", logEntry.Timestamp, logEntry.ComponentID, logEntry.Message)
+		if _, err := file.WriteString(line); err != nil {
+			return fmt.Errorf("failed to write to file: %v", err)
 		}
 	}
 
-	defer cleanupOnce.Do(cleanup)
+	return nil
+}
 
-	// Signal channel to handle interrupts
+// Funcția principală
+func main() {
+	configPath := "./config.json"
+
+	// Initial config load
+	config, err := loadConfig(configPath)
+	if err != nil {
+		log.Fatalf("Failed to load initial config: %v", err)
+	}
+
+	lastConfigJSON, _ := os.ReadFile(configPath)
+
+	// Ensure graceful shutdown on interrupt
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	defer close(signals)
 
-	// Create a ticker for logging every second
+	cleanupManager := sync.Once{}
+	cleanup := func() {
+		log.Println("Cleaning up resources...")
+	}
+	defer cleanupManager.Do(cleanup)
+
+	// Infinite loop to monitor logs and handle writes
+	// ticker := time.NewTicker(1 * time.Minute)
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	fmt.Println("Logged data to Parquet file")
+	// Generate the initial log file path
+	logFilePath := fmt.Sprintf("logs/%s.txt", time.Now().Format("2006-01-02_150405"))
 
-	logs := computing.ComputeSystem(system)
+	for {
+		select {
+		case <-signals:
+			log.Println("Received shutdown signal.")
+			cleanupManager.Do(cleanup)
+			log.Println("Shutdown complete.")
+			return
+		case <-ticker.C:
+			// Reload configuration every minute and check for changes
+			currentConfig, err := loadConfig(configPath)
+			if err != nil {
+				log.Printf("Failed to reload config: %v", err)
+				continue
+			}
 
-	fmt.Println(logs)
+			currentConfigJSON, _ := os.ReadFile(configPath)
+			if string(currentConfigJSON) != string(lastConfigJSON) {
+				log.Println("Configuration has changed. New configuration loaded.")
+				lastConfigJSON = currentConfigJSON
+				config = currentConfig
 
-	// go func() {
-	// 	// Log system data every second
-	// 	for range ticker.C {
-	// 		// Collect logs from the system
-	// 		// Rulează calculul pe baza configurării încărcate
-	// 		logs := computing.ComputeSystem(system)
+				// Generate a new log file path when the config changes
+				logFilePath = fmt.Sprintf("logs/%s.txt", time.Now().Format("2006-01-02_150405"))
+				log.Printf("Switched to new log file: %s", logFilePath)
+			}
 
-	// 		// Write logs to the Parquet file
-	// 		for _, logEntry := range logs {
-	// 			if err := pw.Write(logEntry); err != nil {
-	// 				log.Printf("Failed to write log entry: %v", err)
-	// 			}
-	// 			// Force flush to immediately write the log to disk
-	// 			if err := pw.Flush(true); err != nil {
-	// 				log.Printf("Failed to flush parquet writer: %v", err)
-	// 			}
-	// 		}
+			// Simulate log calculation
+			logEntries := computing.ComputeSystem(config)
 
-	// 		fmt.Println("Logged data to Parquet file")
-	// 	}
-	// }()
+			// Ensure the log directory exists
+			if err := os.MkdirAll("logs", os.ModePerm); err != nil {
+				log.Printf("Error creating log directory: %v", err)
+				continue
+			}
 
-	// // Wait for termination signal
-	// sig := <-signals
-	// log.Printf("Received signal: %v. Shutting down gracefully...", sig)
-	// cleanupOnce.Do(cleanup)
-
-	// zones(system)
+			// Write logs to the new log file
+			if err := writeToFile(logEntries, logFilePath); err != nil {
+				log.Printf("Error writing to file: %v", err)
+			} else {
+				log.Printf("Logged %d entries to %s", len(logEntries), logFilePath)
+			}
+		}
+	}
 }

@@ -1,7 +1,6 @@
 package computing
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"reflect"
@@ -9,6 +8,8 @@ import (
 
 	"contor-system/src/utils"
 )
+
+var logs []LogEntry
 
 type LogEntry = utils.LogEntry
 
@@ -34,7 +35,7 @@ func reactivePowerLineLoss(i float64, x float64) float64 {
 }
 
 /*
-Functie ce calculeaza rezistenta de pe linie: R = ro*l/A
+Functie ce calculeaza rezistenta de pe linie: R = ro*l/A ohm/km
 - ro: rezistivitatea materialului conductorului: ohmi metru, de ex 0.0178 pentru cupru la 20°C
 - l: lungimea liniei electrice: m
 - A: aria sectiunii transversale a conductorului: m^2
@@ -117,8 +118,8 @@ func cosfi(p float64, q float64) float64 {
 /*
 Functie pentru calculul sinfi
 */
-func sinfi(q float64, s float64) float64 {
-	var sinfi = q / s
+func sinfi(cosfi float64) float64 {
+	var sinfi = math.Sqrt(1 - math.Pow(cosfi, 2))
 	return sinfi
 }
 
@@ -175,6 +176,20 @@ Reactanta totala
 func totalReactation(w float64, l float64) float64 {
 	var XL = w * l
 	return XL
+}
+
+/*
+Capacitatea liniei
+Dm - Distanta medie geometrica intre conductori (m)
+r - raza conductorului (m)
+*/
+func lineCapacity(Dm float64, r float64) float64 {
+	epsilon := 8.854e-12 // Permittivity of free space (permitivitatea electrică a vidului)
+	er := 1.0            // Permitivitatea relativă a aerului
+	numerator := 2 * math.Pi * epsilon * er
+	denumerator := math.Log(Dm / r)
+	var C = numerator / denumerator
+	return C
 }
 
 func findConnectedTo(data utils.System, target string) []utils.ConnectedElement {
@@ -276,7 +291,7 @@ func isActive(nID string, config *utils.System) bool {
 	return isActive
 }
 
-func calculatePowerFlow(id string, inputPower float64, config *utils.System, nodes map[string]interface{}, visited map[string]bool, consumersWithoutPower *[]string) {
+func calculatePowerFlow(id string, inputPower float64, config *utils.System, nodes map[string]interface{}, visited map[string]bool, consumersWithoutPower *[]utils.ConsumerPowerDetails) {
 	const LowVoltage = 20
 
 	// Check if the node has already been visited
@@ -313,6 +328,7 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 		var isActive = isActive(n.ID, config)
 
 		if !isActive {
+			calculatePowerFlow(n.ConnectedTo, 0, config, nodes, visited, consumersWithoutPower)
 			return
 		}
 
@@ -321,7 +337,15 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 		var outputPower float64
 
 		// Print the losses and output power
-		fmt.Printf("Transformer %s transferring power: %.2f -> %.2f (losses: %.2f)\n", n.ID, inputPower, outputPower, totalCooperAndSteelLosses)
+		var transformerMessage = fmt.Sprintf("Transformer %s transferring power: %.2f -> %.2f (losses: %.2f)\n", n.ID, inputPower, outputPower, totalCooperAndSteelLosses)
+
+		transformerInfoLog := LogEntry{
+			Timestamp:   time.Now().Format("2006/01/02/15/04/05"),
+			ComponentID: n.ID,
+			Message:     transformerMessage,
+		}
+
+		logs = append(logs, transformerInfoLog)
 
 		if n.InputVoltage == LowVoltage {
 			outputPower = inputPower - totalCooperAndSteelLosses
@@ -333,7 +357,7 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 		// Update the transformer's power in the config
 		for i, transformer := range config.Transformers {
 			if transformer.ID == n.ID {
-				config.Transformers[i].PowerTransfered = inputPower
+				config.Transformers[i].PowerTransfered = outputPower
 				break
 			}
 		}
@@ -343,6 +367,7 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 		var isActive = isActive(n.ID, config)
 
 		if !isActive {
+			calculatePowerFlow(n.ConnectedTo, 0, config, nodes, visited, consumersWithoutPower)
 			return
 		}
 
@@ -352,6 +377,37 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 		// Update the line's power in the config
 		for i, line := range config.Lines {
 			if line.ID == n.ID {
+				var ro = line.Ro
+				var l = int(line.Length)
+				var A = line.Area
+				var lineResistence = lineResistence(ro, l, A)
+				var Dm = geometricDistance(line.Drs, line.Dst, line.Drt)
+				var re = equivalentRadius(line.R)
+				var L = inductionOnLength(Dm, re)
+				var XL = totalReactation(math.Pi*50*L, float64(line.Length)) // Reactanta liniei: ohm/km
+				// var C = lineCapacity(Dm, line.R)
+				var lineCurrent = (inputPower * 1000000) / (line.Voltage * 1000)
+				var apparentPower = (line.Voltage * 1000) * lineCurrent
+				// distante intre faze: Dab = 4m, Dbc = 4m, Dac = 4m
+				// diametrul conductorului: d = 2cm (r = 0.01m)
+				var activePowerLoseesPerLine = wattToMegawatt(powerLineLoss(lineCurrent, lineResistence))
+				var reactivePowerLoseesPerLine = wattToMegawatt(reactivePowerLineLoss(lineCurrent, XL))
+				var cosFi = (inputPower * 1000000) / apparentPower
+				var sinFi = sinfi(cosFi)
+				var Q = (line.Voltage * 1000) * lineCurrent * sinFi
+
+				fmt.Printf("Reactive power on line: %.2f \n", Q)
+
+				var lineInfoMessage = fmt.Sprintf("Line %s (%d km) has voltage %.2f kV , Active power losses per line %.3f, Reactive power losses per line %.3f \n", line.ID, line.Length, line.Voltage, activePowerLoseesPerLine, reactivePowerLoseesPerLine)
+
+				lineInfoLog := LogEntry{
+					Timestamp:   time.Now().Format("2006/01/02/15/04/05"),
+					ComponentID: line.ID,
+					Message:     lineInfoMessage,
+				}
+
+				logs = append(logs, lineInfoLog)
+
 				config.Lines[i].PowerTransfered = inputPower
 				break
 			}
@@ -361,10 +417,21 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 	case utils.Separator:
 		if n.State == utils.StateOpen {
 			fmt.Printf("Separator %s is open, stopping power flow.\n", n.ID)
+			calculatePowerFlow(n.ConnectedTo, 0, config, nodes, visited, consumersWithoutPower)
 			return
 		}
 		for i, separator := range config.Separators {
 			if separator.ID == n.ID {
+				var separatorMessage = fmt.Sprintf("\n Separator %s is in %s state \n", separator.ID, separator.State)
+
+				separatorLog := LogEntry{
+					Timestamp:   time.Now().Format("2006/01/02/15/04/05"),
+					ComponentID: separator.ID,
+					Message:     separatorMessage,
+				}
+
+				logs = append(logs, separatorLog)
+
 				config.Separators[i].State = n.State
 				break
 			}
@@ -374,21 +441,35 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 	case utils.Consumer:
 		var isActive = isActive(n.ID, config)
 
-		if !isActive {
-			return
-		}
 		remainingPower := inputPower - n.PowerNeeded
 
-		if inputPower >= n.PowerNeeded {
-		} else {
-			*consumersWithoutPower = append(*consumersWithoutPower, n.ID)
+		if inputPower < n.PowerNeeded {
+			*consumersWithoutPower = append(*consumersWithoutPower, utils.ConsumerPowerDetails{
+				ID:                   n.ID,
+				RemainingPowerNeeded: remainingPower,
+			})
+		}
+
+		if !isActive {
+			calculatePowerFlow(n.ConnectedTo, 0, config, nodes, visited, consumersWithoutPower)
 			return
 		}
+
 		fmt.Printf("Consumer %s received power: %.2f, remaining: %.2f\n", n.ID, inputPower, remainingPower)
 		// Update the consumer's remaining power in the config
 		for i, consumer := range config.Consumers {
 			if consumer.ID == n.ID {
 				config.Consumers[i].RemainingPower = remainingPower
+				var consumerMessage = fmt.Sprintf("Consumer %s draws %.2f MW at %.2f kV\n", consumer.ID, consumer.PowerNeeded, consumer.Voltage)
+
+				consumerLog := LogEntry{
+					Timestamp:   time.Now().Format("2006/01/02/15/04/05"),
+					ComponentID: consumer.ID,
+					Message:     consumerMessage,
+				}
+
+				logs = append(logs, consumerLog)
+
 				break
 			}
 		}
@@ -401,7 +482,6 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 
 // Funcția principală pentru calcul
 func ComputeSystem(system utils.System) []LogEntry {
-	var logs []LogEntry
 	// var totalActivePowerLosses20KV float64
 	// var totalReactivePowerLosses20KV float64
 	// var totalActivePowerLosses110KV float64
@@ -422,7 +502,7 @@ func ComputeSystem(system utils.System) []LogEntry {
 	// fmt.Println(sourceMessage)
 
 	sourceLog := LogEntry{
-		Timestamp:   time.Now().String(),
+		Timestamp:   time.Now().Format("2006/01/02/15/04/05"),
 		ComponentID: system.Source.ID,
 		Message:     sourceMessage,
 	}
@@ -452,118 +532,41 @@ func ComputeSystem(system utils.System) []LogEntry {
 		nodes[c.ID] = c
 	}
 
-	consumersWithoutPower := []string{}
+	consumersWithoutPower := []utils.ConsumerPowerDetails{}
 
 	// Start traversal from the source
 	calculatePowerFlow(system.Source.ID, system.Source.Power, &system, nodes, visited, &consumersWithoutPower)
 
 	// Reverse calculation from additional sources
 	for _, source := range system.AdditionalSources {
-		calculatePowerFlow(source.ID, source.Power, &system, nodes, visited, &consumersWithoutPower)
+		var isSeparatorClose = false
+		for _, separator := range system.Separators {
+			if separator.ConnectedTo == source.ID && separator.State == utils.StateClose {
+				isSeparatorClose = true
+			}
+		}
+		if isSeparatorClose {
+			calculatePowerFlow(source.ID, source.Power, &system, nodes, visited, &consumersWithoutPower)
+		}
 	}
-
-	// Output updated config
-	updatedConfig, err := json.MarshalIndent(system, "", "  ")
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("Updated Config:")
-	fmt.Println(string(updatedConfig))
 
 	if len(consumersWithoutPower) > 0 {
 		fmt.Println("Consumers without power:")
 		for _, consumerID := range consumersWithoutPower {
-			fmt.Printf("- Consumer ID: %s\n", consumerID)
+			var emptyConsumerMessage = fmt.Sprintf("Consumer %s needs more power: %.2f MW\n", consumerID.ID, consumerID.RemainingPowerNeeded)
+
+			emptyConsumerMessageLog := LogEntry{
+				Timestamp:   time.Now().Format("2006/01/02/15/04/05"),
+				ComponentID: consumerID.ID,
+				Message:     emptyConsumerMessage,
+			}
+
+			logs = append(logs, emptyConsumerMessageLog)
+			fmt.Printf("- Consumer ID: %sn", consumerID.ID)
+			fmt.Printf("- Consumer Power Needed: %fn", consumerID.RemainingPowerNeeded)
 		}
 	} else {
 		fmt.Println("All consumers are powered.")
-	}
-
-	var activePowerLoseesPerLine float64
-	var reactivePowerLoseesPerLine float64
-
-	for _, line := range system.Lines {
-		var ro = line.Ro
-		var l = int(line.Length)
-		var A = line.Area
-		var current = line.Currnet
-		var lineResistence = lineResistence(ro, l, A)
-		activePowerLoseesPerLine += wattToMegawatt(powerLineLoss(current, lineResistence))
-
-		var Dm = geometricDistance(line.Drs, line.Dst, line.Drt)
-		var re = equivalentRadius(line.R)
-		var L = inductionOnLength(Dm, re)
-		var XL = totalReactation(math.Pi*50*L, float64(line.Length)) // Reactanta liniei
-
-		// distante intre faze: Dab = 4m, Dbc = 4m, Dac = 4m
-		// diametrul conductorului: d = 2cm (r = 0.01m)
-		reactivePowerLoseesPerLine += wattToMegawatt(reactivePowerLineLoss(current, XL))
-
-		var lineInfoMessage = fmt.Sprintf("Line %s (%d km) has voltage %.2f kV\n", line.ID, line.Length, line.Voltage)
-		var linePowerLosses = fmt.Sprintf("Active power losses per line: %.3f, Reactive power losses per line %.3f \n", activePowerLoseesPerLine, reactivePowerLoseesPerLine)
-
-		// fmt.Println(lineInfoMessage)
-		// fmt.Println(linePowerLosses)
-
-		lineInfoLog := LogEntry{
-			Timestamp:   time.Now().String(),
-			ComponentID: line.ID,
-			Message:     lineInfoMessage,
-		}
-
-		lineLossesLog := LogEntry{
-			Timestamp:   time.Now().String(),
-			ComponentID: line.ID,
-			Message:     linePowerLosses,
-		}
-
-		logs = append(logs, lineInfoLog)
-		logs = append(logs, lineLossesLog)
-	}
-
-	// Calculează consumatorii
-	for _, consumer := range system.Consumers {
-		var consumerMessage = fmt.Sprintf("Consumer %s draws %.2f MW at %.2f kV\n", consumer.ID, consumer.PowerNeeded, consumer.Voltage)
-		// fmt.Println(consumerMessage)
-
-		consumerLog := LogEntry{
-			Timestamp:   time.Now().String(),
-			ComponentID: consumer.ID,
-			Message:     consumerMessage,
-		}
-
-		logs = append(logs, consumerLog)
-	}
-
-	// Verifică separatorul și sursa adițională
-	for _, separator := range system.Separators {
-		var separatorMessage = fmt.Sprintf("Separator %s is in %s state", separator.ID, separator.State)
-
-		// fmt.Println(separatorMessage)
-
-		separatorLog := LogEntry{
-			Timestamp:   time.Now().String(),
-			ComponentID: separator.ID,
-			Message:     separatorMessage,
-		}
-
-		logs = append(logs, separatorLog)
-
-		if separator.State == utils.StateClose {
-			for _, additionalSource := range system.AdditionalSources {
-				var additionalSourceMessage = fmt.Sprintf("Additional source %s supplying %.2f MW at %.2f kV\n", additionalSource.ID, additionalSource.Power, additionalSource.Voltage)
-				// fmt.Println(additionalSourceMessage)
-
-				additionalSourceLog := LogEntry{
-					Timestamp:   time.Now().String(),
-					ComponentID: additionalSource.ID,
-					Message:     additionalSourceMessage,
-				}
-
-				logs = append(logs, additionalSourceLog)
-			}
-		}
 	}
 
 	return logs

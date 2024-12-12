@@ -23,45 +23,49 @@ type Source struct {
 	Voltage         float64 `json:"voltage"`
 	ConnectedTo     string  `json:"connectedTo"`
 	AdditionalPower float64 `json:"additionalPower"`
+	ReactivePower   float64 `json:"reactivePower"`
 }
 
 type Transformer struct {
-	ID              string          `json:"id"`
-	InputVoltage    float64         `json:"inputVoltage"`
-	OutputVoltage   float64         `json:"outputVoltage"`
-	ConnectedTo     string          `json:"connectedTo"`
-	Type            TransformerType `json:"type"`
-	Efficency       float64         `json:"efficency"`
-	ApparentPower   float64         `json:"apparentPower"` // MW
-	CooperLosses    float64         `json:"cooperLosses"`  // KW
-	SteelLosses     float64         `json:"steelLosses"`   // KW
-	PowerTransfered float64         `json:"powerTransfered"`
+	ID                      string          `json:"id"`
+	InputVoltage            float64         `json:"inputVoltage"`
+	OutputVoltage           float64         `json:"outputVoltage"`
+	ConnectedTo             string          `json:"connectedTo"`
+	Type                    TransformerType `json:"type"`
+	Efficency               float64         `json:"efficency"`
+	ApparentPower           float64         `json:"apparentPower"` // MW
+	CooperLosses            float64         `json:"cooperLosses"`  // KW
+	SteelLosses             float64         `json:"steelLosses"`   // KW
+	PowerTransfered         float64         `json:"powerTransfered"`
+	ReactivePowerTransfered float64         `json:"reactivePowerTransfered"`
 }
 
 type Line struct {
-	ID                  string  `json:"id"`
-	Voltage             float64 `json:"voltage"`
-	Length              int     `json:"length"` // km
-	ConnectedTo         string  `json:"connectedTo"`
-	Area                float64 `json:"area"`
-	Currnet             float64 `json:"current"`
-	Ro                  float64 `json:"ro"`
-	Drs                 float64 `json:"Drs"`
-	Dst                 float64 `json:"Dst"`
-	Drt                 float64 `json:"Drt"`
-	ConductorDiameter   float64 `json:"conductorDiameter"`
-	R                   float64 `json:"r"`
-	PowerTransfered     float64 `json:"powerTransfered"`
-	ReactivePowerLosses float64 `json:"reactivePowerLosses"`
-	ActivePowerLosses   float64 `json:"activePowerLosses"`
+	ID                      string  `json:"id"`
+	Voltage                 float64 `json:"voltage"`
+	Length                  int     `json:"length"` // km
+	ConnectedTo             string  `json:"connectedTo"`
+	Area                    float64 `json:"area"`
+	Currnet                 float64 `json:"current"`
+	Ro                      float64 `json:"ro"`
+	Drs                     float64 `json:"Drs"`
+	Dst                     float64 `json:"Dst"`
+	Drt                     float64 `json:"Drt"`
+	ConductorDiameter       float64 `json:"conductorDiameter"`
+	R                       float64 `json:"r"`
+	PowerTransfered         float64 `json:"powerTransfered"`
+	ReactivePowerTransfered float64 `json:"reactivePowerTransfered"`
+	ReactivePowerLosses     float64 `json:"reactivePowerLosses"`
+	ActivePowerLosses       float64 `json:"activePowerLosses"`
 }
 
 type Consumer struct {
-	ID             string  `json:"id"`
-	PowerNeeded    float64 `json:"powerNeeded"` // MW
-	Voltage        float64 `json:"voltage"`
-	ConnectedTo    string  `json:"connectedTo,omitempty"`
-	RemainingPower float64 `json:"remainingPower"`
+	ID                    string  `json:"id"`
+	PowerNeeded           float64 `json:"powerNeeded"` // MW
+	Voltage               float64 `json:"voltage"`
+	ConnectedTo           string  `json:"connectedTo,omitempty"`
+	RemainingPower        float64 `json:"remainingPower"`
+	ReactivePowerAbsorbed float64 `json:"reactivePowerAbsorbed"`
 }
 
 type Separator struct {
@@ -80,11 +84,17 @@ type System struct {
 	AdditionalSources []Source      `json:"additionalSources"`
 }
 
-// This type struct also represents the parquet schema which is pretty cool
+// * This type struct also represents the parquet schema which is pretty cool
+// type LogEntry struct {
+// 	Timestamp   string `parquet:"name=timestamp, type=BYTE_ARRAY, convertedtype=UTF8"`
+// 	ComponentID string `parquet:"name=component_id, type=BYTE_ARRAY, convertedtype=UTF8"`
+// 	Message     string `parquet:"name=message, type=BYTE_ARRAY, convertedtype=UTF8"`
+// }
+
 type LogEntry struct {
-	Timestamp   string `parquet:"name=timestamp, type=BYTE_ARRAY, convertedtype=UTF8"`
-	ComponentID string `parquet:"name=component_id, type=BYTE_ARRAY, convertedtype=UTF8"`
-	Message     string `parquet:"name=message, type=BYTE_ARRAY, convertedtype=UTF8"`
+	Timestamp   string
+	ComponentID string
+	Message     string
 }
 
 type ConnectedElement struct {
@@ -93,8 +103,8 @@ type ConnectedElement struct {
 }
 
 type ConsumerPowerDetails struct {
-	id             string
-	remainingPower float64
+	ID                   string
+	RemainingPowerNeeded float64
 }
 
 type TransferedPowerDetails struct {

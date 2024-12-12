@@ -5,4 +5,4 @@ cd src
 
 # Run the Go project
 echo "Running the contor system..."
-go run contorsystem.go
+go run ./src/
