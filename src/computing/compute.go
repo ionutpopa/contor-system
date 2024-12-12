@@ -340,7 +340,7 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 		var transformerMessage = fmt.Sprintf("Transformer %s transferring power: %.2f -> %.2f (losses: %.2f)\n", n.ID, inputPower, outputPower, totalCooperAndSteelLosses)
 
 		transformerInfoLog := LogEntry{
-			Timestamp:   time.Now().Format("2006/01/02/15/04/05"),
+			Timestamp:   time.Now().Format("2006/01/02-15:04:05"),
 			ComponentID: n.ID,
 			Message:     transformerMessage,
 		}
@@ -401,7 +401,7 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 				var lineInfoMessage = fmt.Sprintf("Line %s (%d km) has voltage %.2f kV , Active power losses per line %.3f, Reactive power losses per line %.3f \n", line.ID, line.Length, line.Voltage, activePowerLoseesPerLine, reactivePowerLoseesPerLine)
 
 				lineInfoLog := LogEntry{
-					Timestamp:   time.Now().Format("2006/01/02/15/04/05"),
+					Timestamp:   time.Now().Format("2006/01/02-15:04:05"),
 					ComponentID: line.ID,
 					Message:     lineInfoMessage,
 				}
@@ -422,10 +422,10 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 		}
 		for i, separator := range config.Separators {
 			if separator.ID == n.ID {
-				var separatorMessage = fmt.Sprintf("\n Separator %s is in %s state \n", separator.ID, separator.State)
+				var separatorMessage = fmt.Sprintf("Separator %s is in %s state \n", separator.ID, separator.State)
 
 				separatorLog := LogEntry{
-					Timestamp:   time.Now().Format("2006/01/02/15/04/05"),
+					Timestamp:   time.Now().Format("2006/01/02-15:04:05"),
 					ComponentID: separator.ID,
 					Message:     separatorMessage,
 				}
@@ -463,7 +463,7 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 				var consumerMessage = fmt.Sprintf("Consumer %s draws %.2f MW at %.2f kV\n", consumer.ID, consumer.PowerNeeded, consumer.Voltage)
 
 				consumerLog := LogEntry{
-					Timestamp:   time.Now().Format("2006/01/02/15/04/05"),
+					Timestamp:   time.Now().Format("2006/01/02-15:04:05"),
 					ComponentID: consumer.ID,
 					Message:     consumerMessage,
 				}
@@ -482,15 +482,6 @@ func calculatePowerFlow(id string, inputPower float64, config *utils.System, nod
 
 // Funcția principală pentru calcul
 func ComputeSystem(system utils.System) []LogEntry {
-	// var totalActivePowerLosses20KV float64
-	// var totalReactivePowerLosses20KV float64
-	// var totalActivePowerLosses110KV float64
-	// var totalReactivePowerLosses110KV float64
-	// var totalActivePowerLosses220KV float64
-	// var totalReactivePowerLosses220KV float64
-	// var totalActivePowerLosses400KV float64
-	// var totalReactivePowerLosses400KV float64
-
 	fmt.Println("Calculating power flow for the system...")
 
 	// Verifică sursa inițială
@@ -502,7 +493,7 @@ func ComputeSystem(system utils.System) []LogEntry {
 	// fmt.Println(sourceMessage)
 
 	sourceLog := LogEntry{
-		Timestamp:   time.Now().Format("2006/01/02/15/04/05"),
+		Timestamp:   time.Now().Format("2006/01/02-15:04:05"),
 		ComponentID: system.Source.ID,
 		Message:     sourceMessage,
 	}
@@ -556,7 +547,7 @@ func ComputeSystem(system utils.System) []LogEntry {
 			var emptyConsumerMessage = fmt.Sprintf("Consumer %s needs more power: %.2f MW\n", consumerID.ID, consumerID.RemainingPowerNeeded)
 
 			emptyConsumerMessageLog := LogEntry{
-				Timestamp:   time.Now().Format("2006/01/02/15/04/05"),
+				Timestamp:   time.Now().Format("2006/01/02-15:04:05"),
 				ComponentID: consumerID.ID,
 				Message:     emptyConsumerMessage,
 			}
