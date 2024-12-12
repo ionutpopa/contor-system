@@ -8,10 +8,18 @@ WINDOWS NOTE: to both build and start, if you're using wsl you need to run the f
 - export PATH=$PATH:/usr/local/go/bin
 - delete the file go1.23.3.linux-amd64.tar.gz that is not in the first level of the application folder
 
+!!! Important: You need to have installed Go on your system: https://go.dev/doc/install
+
 ## Start the app
-For Windows: Open PowerShell -> wsl -> ./start/start.sh
+For Windows: Open PowerShell -> wsl -> ./start/start.sh OR go run ./src/
 For MacBook: Open Terminal -> ./start/start.sh
 
 ## Build the app
 For Windows: Open PowerShell -> wsl -> ./build/build.sh
 For MacBook: Open Terminal -> ./build/build.sh
+
+## Start the backend:
+cd backend && node server.js
+
+## Start the frontend:
+cd frontend/logs-app && npm start
